@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-search_word = quote("производство штор")
+search_word = quote("производство фар")
 search_city = "moscow"
 
 
@@ -84,12 +84,13 @@ def get_header(wrapper):
 
     rating_elem = wrapper.locator("._y10azs")
     rating = rating_elem.inner_text() if rating_elem.count() > 0 else ""
-    logger.debug(f"Рейтинг: {rating if rating else 'нет'}")
+    logger.debug(f"Рейтинг: {rating if rating else '❌ Отсутствует'}")
 
     reviews_elem = wrapper.locator("._jspzdm")
     count_reviews = reviews_elem.text_content(
     ).split()[0] if reviews_elem.count() > 0 else ""
-    logger.debug(f"Отзывы: {count_reviews if count_reviews else 'нет'}")
+    logger.debug(
+        f"Отзывы: {count_reviews if count_reviews else '❌ Отсутствуют'}")
 
     return name, rating, count_reviews
 
@@ -123,10 +124,10 @@ def get_data_card(wrapper):
                 address = address_info.inner_text()
                 logger.debug(f"Добавлен адрес (резервный селектор): {address}")
             except Exception as e:
-                logger.debug("Адрес не найден по обоим селекторам (таймаут)")
-                logger.debug(f"Ошибка при получении адреса (резерв): {e}")
+                logger.debug("Адрес ❌ не найден по обоим селекторам (таймаут)")
+                logger.debug(f"❌ Ошибка при получении адреса (резерв): {e}")
     except Exception as e:
-        logger.debug(f"Ошибка при получении адреса: {e}")
+        logger.debug(f"❌ Ошибка при получении адреса: {e}")
 
     # Email
     try:
@@ -136,9 +137,9 @@ def get_data_card(wrapper):
             email = email_info.first.inner_text().strip()
             logger.debug(f"Добавлен email: {email}")
         else:
-            logger.debug("Email нет")
+            logger.debug("Email: ❌ Не найден")
     except Exception as e:
-        logger.debug(f"Ошибка при получении email: {e}")
+        logger.debug(f"❌ Ошибка при получении email: {e}")
 
     # Website
     try:
@@ -148,9 +149,9 @@ def get_data_card(wrapper):
             website = website_info.first.inner_text().strip()
             logger.debug(f"Добавлен сайт: {website}")
         else:
-            logger.debug("Сайта нет")
+            logger.debug("Website: ❌ Не найден")
     except Exception as e:
-        logger.debug(f"Ошибка при получении сайта: {e}")
+        logger.debug(f"❌ Ошибка при получении сайта: {e}")
 
     # Кнопка "Показать все телефоны"
     try:
@@ -160,7 +161,7 @@ def get_data_card(wrapper):
             view_all_phones.first.click()
             logger.debug("Телефоны загружены")
     except Exception as e:
-        logger.debug(f"Ошибка при клике на кнопку телефонов: {e}")
+        logger.debug(f"❌ Ошибка при клике на кнопку телефонов: {e}")
 
     # Телефоны
     try:
@@ -171,9 +172,9 @@ def get_data_card(wrapper):
             phones.append(phone)
             logger.debug(f"Добавлен телефон: {phone}")
         if not phones:
-            logger.debug("Телефонов нет")
+            logger.debug("Номера телефонов: ❌ Не найдены")
     except Exception as e:
-        logger.debug(f"Ошибка при получении телефонов: {e}")
+        logger.debug(f"❌ Ошибка при получении телефонов: {e}")
 
     return address, email, phones, website
 
@@ -214,11 +215,11 @@ def get_socials(wrapper):
             elif name == "Telegram":
                 match = re.search(r't\.me/([\w@+]+)', final_data)
                 value = f"@{match.group(1)}" if match else final_data
-            
+
             elif name == "ВКонтакте":
                 match = re.search(r'vk\.com/([\w-]+)', final_data)
                 value = match.group(1) if match else final_data
-            
+
             elif name == "Одноклассники":
                 match = re.search(r'ok\.ru/([\w-]+)', final_data)
                 value = match.group(1) if match else final_data
@@ -226,7 +227,7 @@ def get_socials(wrapper):
             elif name == "YouTube":
                 match = re.search(r'youtube\.com/(@[\w\d_-]+)', final_data)
                 value = match.group(1) if match else final_data
-            
+
             elif name == "Twitter":
                 match = re.search(r'twitter\.com/([\w-]+)', final_data)
                 value = match.group(1) if match else final_data
@@ -247,6 +248,7 @@ def get_socials(wrapper):
 
 try:
     with sync_playwright() as p:
+        start_time_program = time.time()
         browser = p.chromium.launch(headless=False)
         context = browser.new_context()
         page = context.new_page()
@@ -260,6 +262,7 @@ try:
 
         while count_stop:
             try:
+                start_time_page = time.time()
                 page_num += 1
                 logger.info(f"Переход по странице {page_num}")
                 items = page.locator("._1kf6gff")
@@ -268,13 +271,14 @@ try:
 
                 try:
                     for i in range(count_items):
+                        start_time = time.time()
                         item = items.nth(i)
                         address = None
                         website = None
                         email = None
                         phones = []
 
-                        logger.info(f"[{i}] Обработка карточки")
+                        logger.info(f"[{i + 1}] Обработка карточки")
                         if item.count() > 0:
                             item.wait_for(state="visible")
                             item.click()
@@ -289,7 +293,7 @@ try:
                         page.locator('div._k1uvy >> svg').nth(
                             0).click()  # Закрытие карточки
 
-                        logger.info(f"[{i}] ✅ Успешно обработана")
+                        logger.info(f"[{i+1}] ✅ Успешно обработана за {round(time.time() - start_time, 2)} сек")
 
                         collect_data.append({
                             "name": clean_invisible(name),
@@ -303,9 +307,11 @@ try:
                         })
 
                 except Exception as e:
-                    logger.exception(f"[{i}] ❌ Ошибка при обработке карточки")
+                    logger.exception(
+                        f"[{i + 1}] ❌ Ошибка при обработке карточки")
                 finally:
-                    logger.info(f"✅ Данные успешно сохранены")
+                    logger.info(f"📄 Страница {page_num}, всего собрано: {len(collect_data)}, ✅ Успешно обработана за {round(time.time() - start_time, 2)} сек")
+
 
                 next_buttons = page.locator('div._1x4k6z7 >> ._n5hmn94 >> svg')
                 count = next_buttons.count()
@@ -317,15 +323,16 @@ try:
                 elif count == 1:
                     if page.locator('div._1x4k6z7 >> ._7q94tr >> svg').count() > 0:
                         count_stop -= 1
-                        logger.info(
+                        logger.debug(
                             f"Обнаружена неактивная кнопка. Счётчик остановки уменьшен до {count_stop}")
                         if count_stop == 0:
-                            logger.info("Дошли до конца, завершаем цикл")
+                            logger.debug("Дошли до конца, завершаем цикл")
+                            logger.info("✅ Цикл завершен")
                             break
                     next_buttons.nth(0).click()
-                    logger.info("Кликаем по единственной кнопке (nth(0))")
+                    logger.debug("Кликаем по единственной кнопке (nth(0))")
                 else:
-                    logger.info("Кнопок не найдено, прекращаем цикл")
+                    logger.debug("Кнопок не найдено, прекращаем цикл")
                     break
             except Exception as e:
                 logger.error(
@@ -336,4 +343,4 @@ except Exception as e:
 finally:
     logger.info("Программа прекращена")
     save_to_json(collect_data, "output.json")
-    logger.info(f"[{i}] ✅ Данные сохранены")
+    logger.info(f"[{i}] ✅ Данные сохранены, обработано {len(collect_data)} карточек за {round(time.time() - start_time_program, 2)} сек")
