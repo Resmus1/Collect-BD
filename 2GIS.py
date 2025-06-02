@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-search_word = quote("производство фар")
+search_word = quote("Lime, магазин одежды")
 search_city = "moscow"
 
 
@@ -293,7 +293,8 @@ try:
                         page.locator('div._k1uvy >> svg').nth(
                             0).click()  # Закрытие карточки
 
-                        logger.info(f"[{i+1}] ✅ Успешно обработана за {round(time.time() - start_time, 2)} сек")
+                        logger.info(
+                            f"[{i+1}] ✅ Успешно обработана за {round(time.time() - start_time, 2)} сек")
 
                         collect_data.append({
                             "name": clean_invisible(name),
@@ -310,8 +311,8 @@ try:
                     logger.exception(
                         f"[{i + 1}] ❌ Ошибка при обработке карточки")
                 finally:
-                    logger.info(f"📄 Страница {page_num}, всего собрано: {len(collect_data)}, ✅ Успешно обработана за {round(time.time() - start_time, 2)} сек")
-
+                    logger.info(
+                        f"📄 Страница {page_num}, всего собрано: {len(collect_data)}, ✅ Успешно обработана за {round(time.time() - start_time, 2)} сек")
 
                 next_buttons = page.locator('div._1x4k6z7 >> ._n5hmn94 >> svg')
                 count = next_buttons.count()
@@ -343,4 +344,5 @@ except Exception as e:
 finally:
     logger.info("Программа прекращена")
     save_to_json(collect_data, "output.json")
-    logger.info(f"[{i}] ✅ Данные сохранены, обработано {len(collect_data)} карточек за {round(time.time() - start_time_program, 2)} сек")
+    logger.info(
+        f"[{i}] ✅ Данные сохранены, обработано {len(collect_data)} карточек за {round(time.time() - start_time_program, 2)} сек")
