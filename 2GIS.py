@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-search_word = quote("производство штор")
+search_word = "Lime, магазин одежды"
 search_city = "moscow"
 
 
@@ -29,13 +29,37 @@ def clean_invisible(text):
     return re.sub(r'\u2012|\u00a0|\u200b|\+7', '', text).strip()
 
 
-def save_to_json(data, filename="output.json"):
+def write_json_data(data, filename=f"output/{search_word}.json"):
     try:
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
-        logger.info(f"Данные успешно сохранены в {filename}")
+        logger.info(f"✅ Данные успешно сохранены в {search_word}")
     except Exception as e:
-        logger.error(f"Ошибка при сохранении данных в {filename}: {e}")
+        logger.error(f"❌ Ошибка при сохранении данных в {filename}: {e}")
+
+
+def read_json_data(filename=f"output/{search_word}.json"):
+    try:
+        with open(filename, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []
+    except Exception as e:
+        logger.error(f"❌ Ошибка при чтении данных из {filename}: {e}")
+        return []
+
+
+def process_data(existing_data, new_card_data, index):
+    names_existing_data = [x["name"] for x in existing_data]
+
+    if new_card_data["name"] in names_existing_data:
+        logger.debug(f"[{index + 1}] Карточка есть в списке, пропускаем")
+
+    else:
+        logger.debug(f"[{index + 1}] Карточка новая, записываем")
+        collect_data.append(new_card_data)
+        old_data.append(new_card_data)
+        write_json_data(old_data)
 
 
 def wait_for_count(locator, min_count=1, timeout=3000):
@@ -259,6 +283,7 @@ def get_pagination_info(page, selector="div._jcreqo >> ._1xhlznaa", max_cards=12
     return count_cards, count_pages, last_page_count_cards
 
 
+old_data = read_json_data()
 collect_data = []
 try:
     with sync_playwright() as p:
@@ -268,7 +293,7 @@ try:
         page = context.new_page()
 
         logging.debug("Браузер запущен")
-        page.goto(f"https://2gis.kz/{search_city}/search/{search_word}")
+        page.goto(f"https://2gis.kz/{search_city}/search/{quote(search_word)}")
         logging.debug("Открыта страница поиска")
 
         count_cards, count_pages, last_page_count_cards = get_pagination_info(
@@ -309,7 +334,7 @@ try:
                     logger.info(
                         f"[{i+1}] ✅ Успешно обработана за {round(time.time() - start_time_card, 2)} сек")
 
-                    collect_data.append({
+                    data_card = {
                         "name": clean_invisible(name),
                         "rating": clean_invisible(rating),
                         "count_reviews": clean_invisible(count_reviews),
@@ -318,16 +343,17 @@ try:
                         "phones": [clean_invisible(phone) for phone in phones] if phones else None,
                         "website": clean_invisible(website) if website else None,
                         "socials": {k: v for k, v in socials.items()}
-                    })
+                    }
 
+                    process_data(old_data, data_card, i)
             except Exception as e:
                 logger.exception(
                     f"[{i + 1}] ❌ Ошибка при обработке карточки")
             finally:
                 logger.info(
-                    f"📄 Страница {page_index}, всего собрано: {len(collect_data)}, ✅ Успешно обработана за {round(time.time() - start_time_page, 2)} сек")
+                    f"📄 Страница {page_index + 1}, всего собрано: {len(collect_data)}, ✅ Успешно обработана за {round(time.time() - start_time_page, 2)} сек")
                 logger.debug(
-                    f"Страница: {page_index}, Осталось: {count_pages}")
+                    f"Страница: {page_index + 1}, Осталось: {count_pages}")
                 if page_index != count_pages:
                     next_buttons = page.locator(
                         'div._1x4k6z7 >> ._n5hmn94 >> svg')
@@ -346,6 +372,5 @@ except Exception as e:
     logger.error(f"Ошибка при запуске браузера: {e}")
 finally:
     logger.info("Программа прекращена")
-    save_to_json(collect_data, "output.json")
     logger.info(
         f"Всего собрано: {len(collect_data)}, Выполнена за {round(time.time() - start_time_program, 2)} сек")

@@ -1,4 +1,5 @@
 /.venv
 /2GIS.log
 /output.json
-/output.csv
+/output.csv/
+/output
