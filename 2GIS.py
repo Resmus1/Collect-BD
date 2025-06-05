@@ -21,7 +21,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-search_word = "Lime, магазин одежды"
+search_word = "авто магазины"
 search_city = "moscow"
 
 

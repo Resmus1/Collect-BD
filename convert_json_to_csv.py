@@ -12,10 +12,12 @@ def check_data(item, name):
         return '-'
 
 
-with open('output.json', 'r', encoding='utf-8') as f:
+file_name = 'производство штор'
+
+with open(f'output/{file_name}.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
 
-with open('output.csv', 'w', newline='', encoding='utf-8') as f:
+with open(f'output/{file_name}.csv', 'w', newline='', encoding='utf-8') as f:
     fieldnames = [
         'Имя', 'Рейтинг', 'Кол-во отзывов', 'Телефоны', 'Сайт', 'WhatsApp', 'Telegram',
         'VK', 'OK', 'Instagram', 'Twitter', 'Facebook', 'Youtube', 'Email', 'Адрес'
