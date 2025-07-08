@@ -96,8 +96,10 @@ def decode_possible_base64_url(url):
 def get_header(wrapper):
     name = wrapper.locator("h1").text_content()
 
-    rating_elem = wrapper.locator("._y10azs")
-    rating = rating_elem.inner_text() if rating_elem.count() > 0 else ""
+    try:
+        rating = wrapper.locator("._y10azs").inner_text(timeout=300)
+    except:
+        rating = ""
 
     reviews_elem = wrapper.locator("._jspzdm")
     count_reviews = reviews_elem.text_content(
@@ -113,11 +115,9 @@ def get_data_card(wrapper):
     phones = []
 
     # Адрес
-    # Приоритет: сначала проверяем то, что чаще работает
     selectors = [
         "div._172gbf8 >> ._49kxlr >> ._13eh3hvq >> ._oqoid",               # резерв
         "div._172gbf8 >> ._49kxlr >> ._oqoid",                             # второй резерв
-        # основной (раньше стоял первым)
         "div._172gbf8 >> ._49kxlr >> ._13eh3hvq >> ._14quei >> ._wrdavn"
     ]
 
@@ -158,15 +158,39 @@ def get_data_card(wrapper):
     except Exception as e:
         logger.debug(f"❌ Ошибка при клике на кнопку телефонов: {e}")
 
-    # Телефоны
+    # Телефоны (умное ожидание прогрузки)
     try:
-        phones_info = wrapper.locator(
-            'div._172gbf8 >> ._49kxlr >> div >> a[href^="tel:"]')
-        for i in range(phones_info.count()):
-            phone = phones_info.nth(i).inner_text().strip()
-            phones.append(phone)
+        phones = []
+        max_attempts = 5
+        attempt = 0
+
+        while attempt < max_attempts:
+            phones_info = wrapper.locator('div._172gbf8 >> ._49kxlr >> div >> a[href^="tel:"]')
+            raw_phones = []
+
+            for i in range(phones_info.count()):
+                phone = phones_info.nth(i).inner_text().strip()
+                raw_phones.append(phone)
+
+            if all("..." not in p for p in raw_phones):
+                phones = raw_phones
+                break
+
+            logger.warning(f"⚠ Найдены номера с многоточием: {raw_phones}")
+            if view_all_phones.count() > 0:
+                logger.debug(f"🔁 Попытка #{attempt + 1} — кликаем повторно по кнопке телефонов")
+                view_all_phones.first.click()
+
+            attempt += 1
+
+        # даже если есть "...", сохраняем всё что нашли
+        if not phones:
+            phones = raw_phones
+
     except Exception as e:
         logger.debug(f"❌ Ошибка при получении телефонов: {e}")
+
+
 
     return address, email, phones, website
 
@@ -254,9 +278,19 @@ collect_data = []
 try:
     with sync_playwright() as p:
         start_time_program = time.time()
-        browser = p.chromium.launch(headless=False)
-        context = browser.new_context()
-        context.set_default_timeout(3000)
+        browser = p.chromium.launch(
+            headless=True,
+            args=["--disable-blink-features=AutomationControlled"],
+        )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            permissions=[],
+            viewport={"width": 1280, "height": 800},
+            java_script_enabled=True,
+            record_video_dir=None,
+            bypass_csp=True, ##Возможно
+        )
+        context.set_default_timeout(1500)
         page = context.new_page()
         page.set_default_timeout(3000)
 
@@ -268,7 +302,7 @@ try:
 
         count_cards, count_pages, last_page_count_cards = get_pagination_info(
             page)
-
+        
         for page_index in range(count_pages + 1):
             start_time_page = time.time()
             logger.info(
@@ -283,9 +317,11 @@ try:
                     if not item.is_visible():
                         continue
                     item.click()
+                    page.wait_for_selector("._fjltwx h1", timeout=1500)
                     wrapper = page.locator("._fjltwx")
 
                     preview_name = wrapper.locator("h1").text_content().strip()
+                    
                     if preview_name in existing_names:
                         logger.debug(
                             f"[{i + 1}] ⏩ {preview_name} уже в базе, пропуск")
@@ -332,6 +368,7 @@ try:
                 if next_buttons.count() > 0:
                     try:
                         next_buttons.nth(1 if page_index > 0 else 0).click()
+                        page.wait_for_selector("._1kf6gff", timeout=1500)
                     except Exception as e:
                         logger.warning(f"Не удалось нажать 'дальше': {e}")
             else:
