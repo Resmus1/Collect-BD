@@ -1,10 +1,11 @@
 import re
 import json
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 import time
 import base64
-from urllib.parse import unquote, urlparse
 import logging
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+from multiprocessing import Pool, cpu_count
+from urllib.parse import unquote, urlparse
 from urllib.parse import quote
 from playwright.sync_api import sync_playwright
 
@@ -24,26 +25,32 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-
-country = "kz"
+regions = [
+    "Павлодарская область",
+    "Карагандинская область",
+    "Алматинская область"
+]
 search_word = "Автосервис"
-region = "Павлодарская область"
+
+args_list = [(region, search_word) for region in regions]
+country = "kz"
 
 
 def clean_invisible(text):
     return re.sub(r'\u2012|\u00a0|\u200b|\+7', '', text).strip()
 
 
-def write_json_data(data, filename=f"output/{search_word}.json"):
+def write_json_data(data, filename):
     try:
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
         logger.info(f"✅ Данные успешно сохранены в {search_word}")
     except Exception as e:
-        logger.error(f"❌ Ошибка при сохранении данных в {filename}: {e}")
+        logger.error(
+            f"❌ Ошибка при сохранении данных в filename: {e}")
 
 
-def read_json_data(filename=f"output/{search_word}.json"):
+def read_json_data(filename):
     try:
         with open(filename, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -52,14 +59,6 @@ def read_json_data(filename=f"output/{search_word}.json"):
     except Exception as e:
         logger.error(f"❌ Ошибка при чтении данных из {filename}: {e}")
         return []
-
-
-def process_data(existing_data, new_card_data, index):
-    names_existing_data = [x["name"] for x in existing_data]
-
-    if new_card_data["name"] not in names_existing_data:
-        collect_data.append(new_card_data)
-        old_data.append(new_card_data)
 
 
 def decode_possible_base64_url(url):
@@ -165,7 +164,8 @@ def get_data_card(wrapper):
         attempt = 0
 
         while attempt < max_attempts:
-            phones_info = wrapper.locator('div._172gbf8 >> ._49kxlr >> div >> a[href^="tel:"]')
+            phones_info = wrapper.locator(
+                'div._172gbf8 >> ._49kxlr >> div >> a[href^="tel:"]')
             raw_phones = []
 
             for i in range(phones_info.count()):
@@ -178,7 +178,8 @@ def get_data_card(wrapper):
 
             logger.warning(f"⚠ Найдены номера с многоточием: {raw_phones}")
             if view_all_phones.count() > 0:
-                logger.debug(f"🔁 Попытка #{attempt + 1} — кликаем повторно по кнопке телефонов")
+                logger.debug(
+                    f"🔁 Попытка #{attempt + 1} — кликаем повторно по кнопке телефонов")
                 view_all_phones.first.click()
 
             attempt += 1
@@ -189,8 +190,6 @@ def get_data_card(wrapper):
 
     except Exception as e:
         logger.debug(f"❌ Ошибка при получении телефонов: {e}")
-
-
 
     return address, email, phones, website
 
@@ -271,113 +270,136 @@ def get_pagination_info(page, selector="div._jcreqo >> ._1xhlznaa", max_cards=12
     return count_cards, count_pages, last_page_count_cards
 
 
-old_data = read_json_data()
-existing_names = set(x["name"] for x in old_data)
-collect_data = []
+def run_parser_for_region(region, search_word):
+    old_data = read_json_data(f"output/{region}/{search_word}.json")
+    existing_names = set(x["name"] for x in old_data)
+    collect_data = []
 
-try:
-    with sync_playwright() as p:
-        start_time_program = time.time()
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        context = browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-            permissions=[],
-            viewport={"width": 1280, "height": 800},
-            java_script_enabled=True,
-            record_video_dir=None,
-            bypass_csp=True, ##Возможно
-        )
-        context.set_default_timeout(1500)
-        page = context.new_page()
-        page.set_default_timeout(3000)
+    def process_data(existing_data, new_card_data):
+        if new_card_data["name"] not in (x["name"] for x in existing_data):
+            collect_data.append(new_card_data)
+            existing_data.append(new_card_data)
+    try:
 
-        page.goto(
-            f"https://2gis.{country}/search/{quote(region)}%20{quote(search_word)}",
-            wait_until="domcontentloaded",
-            timeout=5000
-        )
+        with sync_playwright() as p:
+            start_time_program = time.time()
+            browser = p.chromium.launch(
+                headless=True,
+                args=["--disable-blink-features=AutomationControlled"],
+            )
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                permissions=[],
+                viewport={"width": 1280, "height": 800},
+                java_script_enabled=True,
+                record_video_dir=None,
+                bypass_csp=True,  # Возможно убрать
+            )
+            context.set_default_timeout(1500)
+            page = context.new_page()
+            page.set_default_timeout(3000)
 
-        count_cards, count_pages, last_page_count_cards = get_pagination_info(
-            page)
-        
-        for page_index in range(count_pages + 1):
-            start_time_page = time.time()
-            logger.info(
-                f"Переход по странице {page_index + 1} из {count_pages + 1}")
-            items = page.locator("._1kf6gff")
-            count = items.count()
+            page.goto(
+                f"https://2gis.{country}/search/{quote(region)}%20{quote(search_word)}",
+                wait_until="domcontentloaded",
+                timeout=5000
+            )
 
-            for i in range(min(12, count if page_index != count_pages else last_page_count_cards)):
-                try:
-                    start_time_card = time.time()
-                    item = items.nth(i)
-                    if not item.is_visible():
-                        continue
-                    item.click()
-                    page.wait_for_selector("._fjltwx h1", timeout=1500)
-                    wrapper = page.locator("._fjltwx")
+            count_cards, count_pages, last_page_count_cards = get_pagination_info(
+                page)
 
-                    preview_name = wrapper.locator("h1").text_content().strip()
-                    
-                    if preview_name in existing_names:
-                        logger.debug(
-                            f"[{i + 1}] ⏩ {preview_name} уже в базе, пропуск")
-                        continue
-                    else:
-                        existing_names.add(preview_name)
+            for page_index in range(count_pages + 1):
+                start_time_page = time.time()
+                logger.info(
+                    f"Переход по странице {page_index + 1} из {count_pages + 1}")
+                items = page.locator("._1kf6gff")
+                count = items.count()
 
-                    if wrapper.count() == 0:
-                        logger.warning(f"[{i + 1}] ❌ Карточка не загрузилась")
-                        continue
-
-                    name, rating, count_reviews = get_header(wrapper)
-                    address, email, phones, website = get_data_card(wrapper)
-                    socials = get_socials(wrapper)
-
-                    close_button = page.locator('div._k1uvy >> svg')
-                    if close_button.count() > 0:
-                        close_button.nth(0).click()
-
-                    logger.info(
-                        f"[{i + 1}] ✅ {name} Успешно обработана за {round(time.time() - start_time_card, 2)} сек")
-
-                    data_card = {
-                        "name": clean_invisible(name),
-                        "rating": clean_invisible(rating),
-                        "count_reviews": clean_invisible(count_reviews),
-                        "address": clean_invisible(address) if address else None,
-                        "email": clean_invisible(email) if email else None,
-                        "phones": [clean_invisible(phone) for phone in phones] if phones else None,
-                        "website": clean_invisible(website) if website else None,
-                        "socials": {k: v for k, v in socials.items()}
-                    }
-
-                    process_data(old_data, data_card, i)
-                except Exception as e:
-                    logger.exception(
-                        f"[{i + 1}] ❌ Ошибка при обработке карточки")
-
-            logger.info(
-                f"📄 Страница {page_index + 1}, собрано: {len(collect_data)}, время: {round(time.time() - start_time_page, 2)} сек")
-
-            if page_index != count_pages:
-                next_buttons = page.locator('div._1x4k6z7 >> ._n5hmn94 >> svg')
-                if next_buttons.count() > 0:
+                for i in range(min(12, count if page_index != count_pages else last_page_count_cards)):
                     try:
-                        next_buttons.nth(1 if page_index > 0 else 0).click()
-                        page.wait_for_selector("._1kf6gff", timeout=1500)
-                    except Exception as e:
-                        logger.warning(f"Не удалось нажать 'дальше': {e}")
-            else:
-                logger.info("✅ Последняя страница достигнута")
+                        start_time_card = time.time()
+                        item = items.nth(i)
+                        if not item.is_visible():
+                            continue
+                        item.click()
+                        page.wait_for_selector("._fjltwx h1", timeout=1500)
+                        wrapper = page.locator("._fjltwx")
 
-except Exception as e:
-    logger.error(f"❌ Ошибка при запуске браузера: {e}")
-finally:
-    write_json_data(old_data)  # Сохраняем только один раз
-    logger.info("Программа завершена")
-    logger.info(
-        f"Всего собрано: {len(collect_data)}, время работы: {round(time.time() - start_time_program, 2)} сек")
+                        preview_name = wrapper.locator(
+                            "h1").text_content().strip()
+
+                        if preview_name in existing_names:
+                            logger.debug(
+                                f"[{i + 1}] ⏩ {preview_name} уже в базе, пропуск")
+                            continue
+                        else:
+                            existing_names.add(preview_name)
+
+                        if wrapper.count() == 0:
+                            logger.warning(
+                                f"[{i + 1}] ❌ Карточка не загрузилась")
+                            continue
+
+                        name, rating, count_reviews = get_header(wrapper)
+                        address, email, phones, website = get_data_card(
+                            wrapper)
+                        socials = get_socials(wrapper)
+
+                        close_button = page.locator('div._k1uvy >> svg')
+                        if close_button.count() > 0:
+                            close_button.nth(0).click()
+
+                        logger.info(
+                            f"[{i + 1}] ✅ {name} Успешно обработана за {round(time.time() - start_time_card, 2)} сек")
+
+                        data_card = {
+                            "name": clean_invisible(name),
+                            "rating": clean_invisible(rating),
+                            "count_reviews": clean_invisible(count_reviews),
+                            "address": clean_invisible(address) if address else None,
+                            "email": clean_invisible(email) if email else None,
+                            "phones": [clean_invisible(phone) for phone in phones] if phones else None,
+                            "website": clean_invisible(website) if website else None,
+                            "socials": {k: v for k, v in socials.items()}
+                        }
+
+                        process_data(old_data, data_card)
+                    except Exception as e:
+                        logger.exception(
+                            f"[{i + 1}] ❌ Ошибка при обработке карточки")
+
+                logger.info(
+                    f"📄 Страница {page_index + 1}, собрано: {len(collect_data)}, время: {round(time.time() - start_time_page, 2)} сек")
+
+                if page_index != count_pages:
+                    next_buttons = page.locator(
+                        'div._1x4k6z7 >> ._n5hmn94 >> svg')
+                    if next_buttons.count() > 0:
+                        try:
+                            next_buttons.nth(1 if page_index >
+                                             0 else 0).click()
+                            page.wait_for_selector("._1kf6gff", timeout=1500)
+                        except Exception as e:
+                            logger.warning(f"Не удалось нажать 'дальше': {e}")
+                else:
+                    logger.info("✅ Последняя страница достигнута")
+
+    except Exception as e:
+        logger.error(f"❌ Ошибка при запуске браузера: {e}")
+    finally:
+        # Сохраняем только один раз
+        write_json_data(
+            old_data, filename=f"output/{region}_{search_word}.json")
+        logger.info("Программа завершена")
+        logger.info(
+            f"Всего собрано: {len(collect_data)}, время работы: {round(time.time() - start_time_program, 2)} сек")
+
+
+if __name__ == '__main__':
+    try:
+        with Pool(processes=3) as pool:
+            pool.starmap(run_parser_for_region, args_list)
+
+            print("✅ Все процессы завершены")
+    except KeyboardInterrupt:
+        print("⛔ Прервано пользователем. Процессы остановлены.")
