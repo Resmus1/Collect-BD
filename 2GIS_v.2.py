@@ -3,6 +3,7 @@ import json
 import time
 import base64
 import logging
+from pathlib import Path
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from multiprocessing import Pool, cpu_count
 from urllib.parse import unquote, urlparse
@@ -26,28 +27,34 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 regions = [
-    "Павлодарская область",
-    "Карагандинская область",
-    "Алматинская область"
+    "Амурская область",
+    "Архангельская область",
+    "Астраханская область"
 ]
+
 search_word = "Автосервис"
 
 args_list = [(region, search_word) for region in regions]
-country = "kz"
+country = "ru"
 
 
 def clean_invisible(text):
     return re.sub(r'\u2012|\u00a0|\u200b|\+7', '', text).strip()
 
 
-def write_json_data(data, filename):
+def write_json_data(data: dict, filename: str | Path) -> None:
+    path = Path(filename)
+
+    # 1. Создаём все недостающие каталоги
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 2. Записываем файл
     try:
-        with open(filename, 'w', encoding='utf-8') as f:
+        with path.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=4)
-        logger.info(f"✅ Данные успешно сохранены в {search_word}")
+        logger.info(f"✅ Данные успешно сохранены в {path}")
     except Exception as e:
-        logger.error(
-            f"❌ Ошибка при сохранении данных в filename: {e}")
+        logger.error(f"❌ Ошибка при сохранении данных в {path}: {e}")
 
 
 def read_json_data(filename):
@@ -389,7 +396,7 @@ def run_parser_for_region(region, search_word):
     finally:
         # Сохраняем только один раз
         write_json_data(
-            old_data, filename=f"output/{region}_{search_word}.json")
+            old_data, Path("output") / region / f"{search_word}.json")
         logger.info("Программа завершена")
         logger.info(
             f"Всего собрано: {len(collect_data)}, время работы: {round(time.time() - start_time_program, 2)} сек")
