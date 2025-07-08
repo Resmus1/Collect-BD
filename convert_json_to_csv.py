@@ -12,7 +12,7 @@ def check_data(item, name):
         return '-'
 
 
-file_name = 'производство штор'
+file_name = 'авто магазины'
 
 with open(f'output/{file_name}.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
