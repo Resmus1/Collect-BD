@@ -483,7 +483,7 @@ def run_parser_for_region(region, search_word, attempt=1):
         logger.info(
             f"Всего собрано: {len(collect_data)}, время работы: {round(time.time() - start_time_program, 2)} сек")
 
-        if not collect_data:
+        if not count_cards:
             if attempt == 1:
                 logger.warning(
                     f"🔁 Повторный запуск региона '{region}' — первая попытка вернула 0 карточек")
