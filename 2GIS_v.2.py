@@ -1,24 +1,29 @@
-from playwright.sync_api import sync_playwright
-from urllib.parse import quote
-import logging
-from urllib.parse import unquote, urlparse
-import base64
-import time
-from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
-import json
 import re
+import json
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+import time
+import base64
+from urllib.parse import unquote, urlparse
+import logging
+from urllib.parse import quote
+from playwright.sync_api import sync_playwright
 
+
+file_handler = logging.FileHandler("2GIS.log", mode="a", encoding="utf-8")
+file_handler.setLevel(logging.INFO)  # Лог в файл только важное
+
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.DEBUG)  # В консоль всё (если нужно)
 
 logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
-    handlers=[
-        logging.FileHandler("2GIS.log", mode="a", encoding="utf-8"),
-        logging.StreamHandler()
-    ]
+    handlers=[file_handler, console_handler]
 )
+
 logger = logging.getLogger(__name__)
+
 
 country = "kz"
 search_word = "Автосервис"
@@ -52,14 +57,9 @@ def read_json_data(filename=f"output/{search_word}.json"):
 def process_data(existing_data, new_card_data, index):
     names_existing_data = [x["name"] for x in existing_data]
 
-    if new_card_data["name"] in names_existing_data:
-        logger.debug(f"[{index + 1}] Карточка есть в списке, пропускаем")
-
-    else:
-        logger.debug(f"[{index + 1}] Карточка новая, записываем")
+    if new_card_data["name"] not in names_existing_data:
         collect_data.append(new_card_data)
         old_data.append(new_card_data)
-        write_json_data(old_data)
 
 
 def decode_possible_base64_url(url):
@@ -95,17 +95,13 @@ def decode_possible_base64_url(url):
 
 def get_header(wrapper):
     name = wrapper.locator("h1").text_content()
-    logger.debug(f"Название: {name}")
 
     rating_elem = wrapper.locator("._y10azs")
     rating = rating_elem.inner_text() if rating_elem.count() > 0 else ""
-    logger.debug(f"Рейтинг: {rating if rating else '❌ Отсутствует'}")
 
     reviews_elem = wrapper.locator("._jspzdm")
     count_reviews = reviews_elem.text_content(
     ).split()[0] if reviews_elem.count() > 0 else ""
-    logger.debug(
-        f"Отзывы: {count_reviews if count_reviews else '❌ Отсутствуют'}")
 
     return name, rating, count_reviews
 
@@ -121,24 +117,20 @@ def get_data_card(wrapper):
     selectors = [
         "div._172gbf8 >> ._49kxlr >> ._13eh3hvq >> ._oqoid",               # резерв
         "div._172gbf8 >> ._49kxlr >> ._oqoid",                             # второй резерв
-        "div._172gbf8 >> ._49kxlr >> ._13eh3hvq >> ._14quei >> ._wrdavn"   # основной (раньше стоял первым)
+        # основной (раньше стоял первым)
+        "div._172gbf8 >> ._49kxlr >> ._13eh3hvq >> ._14quei >> ._wrdavn"
     ]
 
     for sel in selectors:
         locator = wrapper.locator(sel)
         if locator.count() > 0:
             try:
-                address = locator.nth(0).inner_text(timeout=1000).strip()
-                logger.debug(f"✅ Адрес найден по селектору: {sel} -> {address}")
+                address = locator.nth(0).inner_text(timeout=500).strip()
                 break
             except Exception as e:
                 logger.debug(f"❌ Ошибка при чтении адреса из {sel}: {e}")
-        else:
-            logger.debug(f"❌ Элемент по селектору {sel} не найден")
-
     if not address:
         logger.debug("❌ Адрес не найден ни по одному из селекторов")
-
 
     # Email
     try:
@@ -146,9 +138,6 @@ def get_data_card(wrapper):
             'div._172gbf8 >> ._49kxlr >> div >> a[href^="mailto:"]')
         if email_info.count() > 0:
             email = email_info.first.inner_text().strip()
-            logger.debug(f"Добавлен email: {email}")
-        else:
-            logger.debug("Email: ❌ Не найден")
     except Exception as e:
         logger.debug(f"❌ Ошибка при получении email: {e}")
 
@@ -158,9 +147,6 @@ def get_data_card(wrapper):
             'div._172gbf8 >> ._49kxlr >> div >> a[href^="https://"]')
         if website_info.count() > 0:
             website = website_info.first.inner_text().strip()
-            logger.debug(f"Добавлен сайт: {website}")
-        else:
-            logger.debug("Website: ❌ Не найден")
     except Exception as e:
         logger.debug(f"❌ Ошибка при получении сайта: {e}")
 
@@ -168,9 +154,7 @@ def get_data_card(wrapper):
     try:
         view_all_phones = wrapper.locator("._1tkj2hw")
         if view_all_phones.count() > 0:
-            # view_all_phones.first.wait_for(state="visible", timeout=5000)
             view_all_phones.first.click()
-            logger.debug("Телефоны загружены")
     except Exception as e:
         logger.debug(f"❌ Ошибка при клике на кнопку телефонов: {e}")
 
@@ -181,9 +165,6 @@ def get_data_card(wrapper):
         for i in range(phones_info.count()):
             phone = phones_info.nth(i).inner_text().strip()
             phones.append(phone)
-            logger.debug(f"Добавлен телефон: {phone}")
-        if not phones:
-            logger.debug("Номера телефонов: ❌ Не найдены")
     except Exception as e:
         logger.debug(f"❌ Ошибка при получении телефонов: {e}")
 
@@ -208,7 +189,6 @@ def get_socials(wrapper):
         '[aria-label="Facebook"], [aria-label="Twitter"], [aria-label="YouTube"]'
     )
     count = links.count()
-    logger.debug(f"Найдено социальных ссылок: {count}")
 
     for i in range(count):
         link = links.nth(i)
@@ -252,14 +232,13 @@ def get_socials(wrapper):
                     value = final_data
 
             data[name].append(value.strip())
-            logger.debug(f"{name}: {value}")
 
     return data
 
 
 def get_pagination_info(page, selector="div._jcreqo >> ._1xhlznaa", max_cards=12):
     try:
-        count_cards_text = page.locator(selector).inner_text(timeout=1000)
+        count_cards_text = page.locator(selector).inner_text(timeout=500)
         count_cards = int(count_cards_text)
     except:
         count_cards = 0
@@ -267,7 +246,9 @@ def get_pagination_info(page, selector="div._jcreqo >> ._1xhlznaa", max_cards=12
     last_page_count_cards = count_cards % max_cards
     return count_cards, count_pages, last_page_count_cards
 
+
 old_data = read_json_data()
+existing_names = set(x["name"] for x in old_data)
 collect_data = []
 
 try:
@@ -279,19 +260,19 @@ try:
         page = context.new_page()
         page.set_default_timeout(3000)
 
-        logger.debug("Браузер запущен")
         page.goto(
             f"https://2gis.{country}/search/{quote(region)}%20{quote(search_word)}",
             wait_until="domcontentloaded",
-            timeout=3000
-            )
-        logger.debug("Открыта страница поиска")
+            timeout=5000
+        )
 
-        count_cards, count_pages, last_page_count_cards = get_pagination_info(page)
+        count_cards, count_pages, last_page_count_cards = get_pagination_info(
+            page)
 
         for page_index in range(count_pages + 1):
             start_time_page = time.time()
-            logger.info(f"Переход по странице {page_index + 1} из {count_pages + 1}")
+            logger.info(
+                f"Переход по странице {page_index + 1} из {count_pages + 1}")
             items = page.locator("._1kf6gff")
             count = items.count()
 
@@ -302,8 +283,16 @@ try:
                     if not item.is_visible():
                         continue
                     item.click()
-
                     wrapper = page.locator("._fjltwx")
+
+                    preview_name = wrapper.locator("h1").text_content().strip()
+                    if preview_name in existing_names:
+                        logger.debug(
+                            f"[{i + 1}] ⏩ {preview_name} уже в базе, пропуск")
+                        continue
+                    else:
+                        existing_names.add(preview_name)
+
                     if wrapper.count() == 0:
                         logger.warning(f"[{i + 1}] ❌ Карточка не загрузилась")
                         continue
@@ -316,7 +305,8 @@ try:
                     if close_button.count() > 0:
                         close_button.nth(0).click()
 
-                    logger.info(f"[{i + 1}] ✅ Успешно обработана за {round(time.time() - start_time_card, 2)} сек")
+                    logger.info(
+                        f"[{i + 1}] ✅ {name} Успешно обработана за {round(time.time() - start_time_card, 2)} сек")
 
                     data_card = {
                         "name": clean_invisible(name),
@@ -331,9 +321,11 @@ try:
 
                     process_data(old_data, data_card, i)
                 except Exception as e:
-                    logger.exception(f"[{i + 1}] ❌ Ошибка при обработке карточки")
+                    logger.exception(
+                        f"[{i + 1}] ❌ Ошибка при обработке карточки")
 
-            logger.info(f"📄 Страница {page_index + 1}, собрано: {len(collect_data)}, время: {round(time.time() - start_time_page, 2)} сек")
+            logger.info(
+                f"📄 Страница {page_index + 1}, собрано: {len(collect_data)}, время: {round(time.time() - start_time_page, 2)} сек")
 
             if page_index != count_pages:
                 next_buttons = page.locator('div._1x4k6z7 >> ._n5hmn94 >> svg')
@@ -348,5 +340,7 @@ try:
 except Exception as e:
     logger.error(f"❌ Ошибка при запуске браузера: {e}")
 finally:
+    write_json_data(old_data)  # Сохраняем только один раз
     logger.info("Программа завершена")
-    logger.info(f"Всего собрано: {len(collect_data)}, время работы: {round(time.time() - start_time_program, 2)} сек")
+    logger.info(
+        f"Всего собрано: {len(collect_data)}, время работы: {round(time.time() - start_time_program, 2)} сек")
