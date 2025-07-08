@@ -27,14 +27,62 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 regions = [
-    "Амурская область",
-    "Архангельская область",
-    "Астраханская область"
+    # "Амурская область",
+    # "Архангельская область",
+    # "Астраханская область",
+    # "Белгородская область",
+    # "Брянская область",
+    # "Владимирская область",
+    # "Волгоградская область",
+    # "Вологодская область",
+    # "Воронежская область",
+    # "Ивановская область",
+    # "Иркутская область",
+    # "Калининградская область",
+    # "Калужская область",
+    # "Камчатская область",
+    # "Кемеровская область",
+    # "Кировская область",
+    # "Костромская область",
+    # "Курганская область",
+    # "Курская область",
+    # "Ленинградская область",
+    # "Липецкая область",
+    "Магаданская область",
+    # "Московская область",
+    # "Мурманская область",
+    # "Нижегородская область",
+    # "Новгородская область",
+    # "Новосибирская область",
+    # "Омская область",
+    # "Оренбургская область",
+    # "Орловская область",
+    # "Пензенская область",
+    # "Пермская область",
+    # "Псковская область",
+    # "Ростовская область",
+    # "Рязанская область",
+    # "Самарская область",
+    # "Саратовская область",
+    # "Сахалинская область",
+    # "Свердловская область",
+    # "Смоленская область",
+    # "Тамбовская область",
+    # "Тверская область",
+    # "Томская область",
+    # "Тульская область",
+    # "Тюменская область",
+    # "Ульяновская область",
+    # "Челябинская область",
+    # "Ярославская область"
 ]
 
-search_word = "Автосервис"
+search_words = [
+    "Автосервис",
+    # "Красота",
+]
 
-args_list = [(region, search_word) for region in regions]
+args_list = [(region, word) for word in search_words for region in regions]
 country = "ru"
 
 
@@ -268,16 +316,18 @@ def get_socials(wrapper):
 
 def get_pagination_info(page, selector="div._jcreqo >> ._1xhlznaa", max_cards=12):
     try:
-        count_cards_text = page.locator(selector).inner_text(timeout=500)
-        count_cards = int(count_cards_text)
-    except:
-        count_cards = 0
-    count_pages = count_cards // max_cards
-    last_page_count_cards = count_cards % max_cards
-    return count_cards, count_pages, last_page_count_cards
+        count_cards_text = page.locator(selector).inner_text(timeout=1500)
+        count_cards = int(re.search(r"\d+", count_cards_text).group())
+        count_pages = (count_cards + max_cards - 1) // max_cards
+        return count_cards, count_pages
+    except Exception as e:
+        logger.warning(f"⚠ Не удалось получить число карточек: {e}")
+        return 0, 1  # безопасное значение
 
 
-def run_parser_for_region(region, search_word):
+def run_parser_for_region(region, search_word, attempt=1):
+    logger.info(
+        f"🚀 Запуск парсинга: регион = '{region}', категория = '{search_word}'")
     old_data = read_json_data(f"output/{region}/{search_word}.json")
     existing_names = set(x["name"] for x in old_data)
     collect_data = []
@@ -286,8 +336,8 @@ def run_parser_for_region(region, search_word):
         if new_card_data["name"] not in (x["name"] for x in existing_data):
             collect_data.append(new_card_data)
             existing_data.append(new_card_data)
-    try:
 
+    try:
         with sync_playwright() as p:
             start_time_program = time.time()
             browser = p.chromium.launch(
@@ -312,39 +362,58 @@ def run_parser_for_region(region, search_word):
                 timeout=5000
             )
 
-            count_cards, count_pages, last_page_count_cards = get_pagination_info(
-                page)
+            count_cards, count_pages = get_pagination_info(page)
+            logger.info(
+                f"🔢 Найдено {count_cards} карточек, {count_pages} страниц в {region}")
 
             for page_index in range(count_pages + 1):
                 start_time_page = time.time()
                 logger.info(
                     f"Переход по странице {page_index + 1} из {count_pages + 1}")
-                items = page.locator("._1kf6gff")
-                count = items.count()
 
-                for i in range(min(12, count if page_index != count_pages else last_page_count_cards)):
+                card_blocks = page.locator("._awwm2v > div")
+                total = card_blocks.count()
+
+                for i in range(total):
                     try:
                         start_time_card = time.time()
-                        item = items.nth(i)
-                        if not item.is_visible():
+                        card = card_blocks.nth(i)
+                        card.scroll_into_view_if_needed()
+                        page.wait_for_timeout(150)
+
+                        if not card.is_visible():
+                            logger.debug(
+                                f"[{i+1}] ❌ Элемент не виден — пропуск")
                             continue
-                        item.click()
-                        page.wait_for_selector("._fjltwx h1", timeout=1500)
+
+                        card.click(timeout=1500)
+
+                        try:
+                            page.wait_for_selector("._fjltwx h1", timeout=2000)
+                        except:
+                            logger.warning(
+                                f"[{i+1}] ⚠ Карточка не прогрузилась — пропуск")
+                            continue
+
                         wrapper = page.locator("._fjltwx")
+                        if wrapper.count() == 0:
+                            logger.warning(
+                                f"[{i+1}] ❌ Карточка пуста — пропуск")
+                            continue
 
                         preview_name = wrapper.locator(
                             "h1").text_content().strip()
 
                         if preview_name in existing_names:
                             logger.debug(
-                                f"[{i + 1}] ⏩ {preview_name} уже в базе, пропуск")
+                                f"[{i + 1}] ⏩ {preview_name} уже в базе {region}, пропуск")
                             continue
                         else:
                             existing_names.add(preview_name)
 
                         if wrapper.count() == 0:
                             logger.warning(
-                                f"[{i + 1}] ❌ Карточка не загрузилась")
+                                f"[{i + 1}] ❌ Карточка в {region} не загрузилась")
                             continue
 
                         name, rating, count_reviews = get_header(wrapper)
@@ -357,7 +426,7 @@ def run_parser_for_region(region, search_word):
                             close_button.nth(0).click()
 
                         logger.info(
-                            f"[{i + 1}] ✅ {name} Успешно обработана за {round(time.time() - start_time_card, 2)} сек")
+                            f"[{i + 1}] ✅ {name} в {region} Успешно обработана за {round(time.time() - start_time_card, 2)} сек")
 
                         data_card = {
                             "name": clean_invisible(name),
@@ -373,26 +442,39 @@ def run_parser_for_region(region, search_word):
                         process_data(old_data, data_card)
                     except Exception as e:
                         logger.exception(
-                            f"[{i + 1}] ❌ Ошибка при обработке карточки")
+                            f"[{i + 1}] ❌ Ошибка при обработке карточки в {region}")
 
                 logger.info(
-                    f"📄 Страница {page_index + 1}, собрано: {len(collect_data)}, время: {round(time.time() - start_time_page, 2)} сек")
+                    f"📄 В {region} страница {page_index + 1}, собрано: {len(collect_data)}, время: {round(time.time() - start_time_page, 2)} сек")
 
                 if page_index != count_pages:
                     next_buttons = page.locator(
                         'div._1x4k6z7 >> ._n5hmn94 >> svg')
-                    if next_buttons.count() > 0:
-                        try:
-                            next_buttons.nth(1 if page_index >
-                                             0 else 0).click()
-                            page.wait_for_selector("._1kf6gff", timeout=1500)
-                        except Exception as e:
-                            logger.warning(f"Не удалось нажать 'дальше': {e}")
-                else:
-                    logger.info("✅ Последняя страница достигнута")
+                    try:
+                        if next_buttons.count() > 1:
+                            next_buttons.nth(1).click()
+                        elif next_buttons.count() == 1:
+                            next_buttons.first.click()
+                        else:
+                            raise Exception("Кнопка 'дальше' не найдена")
 
+                        # Убедимся, что страница изменилась
+                        # Можно подстраховаться паузой
+                        page.wait_for_timeout(500)
+                        logger.info(f"➡ Переход на следующую страницу успешен")
+                        page_index += 1
+
+                    except Exception as e:
+                        logger.warning(
+                            f"❌ Не удалось перейти на следующую страницу в {region}: {e}")
+                        logger.info(
+                            f"🚫 Останавливаем парсинг {region} на текущей странице")
+                        break
+                else:
+                    logger.info(f"✅ Последняя страница {region} достигнута")
     except Exception as e:
-        logger.error(f"❌ Ошибка при запуске браузера: {e}")
+        logger.error(
+            f"❌ Ошибка при запуске браузера для региона {region}: {e}")
     finally:
         # Сохраняем только один раз
         write_json_data(
@@ -401,12 +483,46 @@ def run_parser_for_region(region, search_word):
         logger.info(
             f"Всего собрано: {len(collect_data)}, время работы: {round(time.time() - start_time_program, 2)} сек")
 
+        if not collect_data:
+            if attempt == 1:
+                logger.warning(
+                    f"🔁 Повторный запуск региона '{region}' — первая попытка вернула 0 карточек")
+                return run_parser_for_region(region, search_word, attempt=2)
+            else:
+                logger.warning(
+                    f"⚠ Регион '{region}' дал 0 карточек — даже после повтора")
+                with open("failed_regions.txt", "a", encoding="utf-8") as f:
+                    f.write(f"{region}|{search_word}\n")
+
 
 if __name__ == '__main__':
-    try:
-        with Pool(processes=3) as pool:
-            pool.starmap(run_parser_for_region, args_list)
+    num_processes = 3
+    # сколько раз обходить все регионы (1 — минимум, 2 — твой случай)
+    max_passes = 2
 
-            print("✅ Все процессы завершены")
-    except KeyboardInterrupt:
-        print("⛔ Прервано пользователем. Процессы остановлены.")
+    start_time_all = time.time()  # общее время работы
+
+    for current_pass in range(1, max_passes + 1):
+        start_time_pass = time.time()  # время одного прохода
+
+        logger.info(
+            f"🚀 Запуск обхода #{current_pass} со {num_processes} процессами")
+
+        with Pool(processes=num_processes) as pool:
+            results = []
+            for args in args_list:
+                r = pool.apply_async(run_parser_for_region, args=args)
+                results.append(r)
+
+            for i, r in enumerate(results):
+                try:
+                    r.wait()  # Ждём завершения
+                    logger.info(f"✅ Объект #{i + 1} завершён")
+                except Exception as e:
+                    logger.error(f"❌ Ошибка в объекте #{i + 1}: {e}")
+
+        pass_time = round(time.time() - start_time_pass, 2)
+        logger.info(f"🎉 Обход #{current_pass} завершён за {pass_time} сек")
+
+    total_time = round(time.time() - start_time_all, 2)
+    logger.info(f"🏁 Все обходы завершены за {total_time} сек")
