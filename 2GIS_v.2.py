@@ -117,31 +117,28 @@ def get_data_card(wrapper):
     phones = []
 
     # Адрес
-    try:
-        address_info = wrapper.locator(
-            "div._172gbf8 >> ._49kxlr >> ._13eh3hvq >> ._14quei >> ._wrdavn").nth(0)
-        # address_info.wait_for(state="visible", timeout=5000)
-        address = address_info.inner_text()
-        logger.debug(f"Добавлен адрес: {address}")
-    except PlaywrightTimeoutError:
-        try:
-            address_info = wrapper.locator(
-                "div._172gbf8 >> ._49kxlr >> ._13eh3hvq >> ._oqoid").nth(0)
-            # address_info.wait_for(state="visible", timeout=5000)
-            address = address_info.inner_text()
-            logger.debug(f"Добавлен адрес (резервный селектор): {address}")
-        except PlaywrightTimeoutError:
+    # Приоритет: сначала проверяем то, что чаще работает
+    selectors = [
+        "div._172gbf8 >> ._49kxlr >> ._13eh3hvq >> ._oqoid",               # резерв
+        "div._172gbf8 >> ._49kxlr >> ._oqoid",                             # второй резерв
+        "div._172gbf8 >> ._49kxlr >> ._13eh3hvq >> ._14quei >> ._wrdavn"   # основной (раньше стоял первым)
+    ]
+
+    for sel in selectors:
+        locator = wrapper.locator(sel)
+        if locator.count() > 0:
             try:
-                address_info = wrapper.locator(
-                    "div._172gbf8 >> ._49kxlr >> ._oqoid").nth(0)
-                # address_info.wait_for(state="visible", timeout=5000)
-                address = address_info.inner_text()
-                logger.debug(f"Добавлен адрес (резервный селектор): {address}")
+                address = locator.nth(0).inner_text(timeout=1000).strip()
+                logger.debug(f"✅ Адрес найден по селектору: {sel} -> {address}")
+                break
             except Exception as e:
-                logger.debug("Адрес ❌ не найден по обоим селекторам (таймаут)")
-                logger.debug(f"❌ Ошибка при получении адреса (резерв): {e}")
-    except Exception as e:
-        logger.debug(f"❌ Ошибка при получении адреса: {e}")
+                logger.debug(f"❌ Ошибка при чтении адреса из {sel}: {e}")
+        else:
+            logger.debug(f"❌ Элемент по селектору {sel} не найден")
+
+    if not address:
+        logger.debug("❌ Адрес не найден ни по одному из селекторов")
+
 
     # Email
     try:
@@ -261,69 +258,65 @@ def get_socials(wrapper):
 
 
 def get_pagination_info(page, selector="div._jcreqo >> ._1xhlznaa", max_cards=12):
-    count_cards_text = page.locator(selector).text_content()
-    count_cards = int(count_cards_text)
+    try:
+        count_cards_text = page.locator(selector).inner_text(timeout=1000)
+        count_cards = int(count_cards_text)
+    except:
+        count_cards = 0
     count_pages = count_cards // max_cards
     last_page_count_cards = count_cards % max_cards
-
-    logger.debug(
-        f"Количество страниц: {count_pages + 1}, количество карточек на последней странице: {last_page_count_cards}")
-    logger.info(f"Количество карточек: {count_cards}")
-
     return count_cards, count_pages, last_page_count_cards
-
 
 old_data = read_json_data()
 collect_data = []
+
 try:
     with sync_playwright() as p:
         start_time_program = time.time()
         browser = p.chromium.launch(headless=False)
         context = browser.new_context()
+        context.set_default_timeout(3000)
         page = context.new_page()
+        page.set_default_timeout(3000)
 
-        logging.debug("Браузер запущен")
+        logger.debug("Браузер запущен")
         page.goto(
-            f"https://2gis.{country}/search/{quote(region)}%20{quote(search_word)}")
-        # page.goto(f"https://2gis.kz/{search_city}/search/{quote(search_word)}")
-        logging.debug("Открыта страница поиска")
+            f"https://2gis.{country}/search/{quote(region)}%20{quote(search_word)}",
+            wait_until="domcontentloaded",
+            timeout=3000
+            )
+        logger.debug("Открыта страница поиска")
 
-        count_cards, count_pages, last_page_count_cards = get_pagination_info(
-            page)
+        count_cards, count_pages, last_page_count_cards = get_pagination_info(page)
 
         for page_index in range(count_pages + 1):
             start_time_page = time.time()
-            logger.info(
-                f"Переход по странице {page_index + 1} из {count_pages + 1}")
+            logger.info(f"Переход по странице {page_index + 1} из {count_pages + 1}")
             items = page.locator("._1kf6gff")
-            logger.debug(f"Получение общих данных")
+            count = items.count()
 
-            try:
-                for i in range(12 if page_index != count_pages else last_page_count_cards):
+            for i in range(min(12, count if page_index != count_pages else last_page_count_cards)):
+                try:
                     start_time_card = time.time()
                     item = items.nth(i)
-                    address = None
-                    website = None
-                    email = None
-                    phones = []
+                    if not item.is_visible():
+                        continue
+                    item.click()
 
-                    logger.info(f"[{i + 1}] Обработка карточки")
-                    if item.count() > 0:
-                        item.wait_for(state="visible")
-                        item.click()
                     wrapper = page.locator("._fjltwx")
-                    # wrapper.first.wait_for(state="visible", timeout=7000)
+                    if wrapper.count() == 0:
+                        logger.warning(f"[{i + 1}] ❌ Карточка не загрузилась")
+                        continue
 
                     name, rating, count_reviews = get_header(wrapper)
-                    address, email, phones, website = get_data_card(
-                        wrapper)
+                    address, email, phones, website = get_data_card(wrapper)
                     socials = get_socials(wrapper)
 
-                    page.locator('div._k1uvy >> svg').nth(
-                        0).click()  # Закрытие карточки
+                    close_button = page.locator('div._k1uvy >> svg')
+                    if close_button.count() > 0:
+                        close_button.nth(0).click()
 
-                    logger.info(
-                        f"[{i+1}] ✅ Успешно обработана за {round(time.time() - start_time_card, 2)} сек")
+                    logger.info(f"[{i + 1}] ✅ Успешно обработана за {round(time.time() - start_time_card, 2)} сек")
 
                     data_card = {
                         "name": clean_invisible(name),
@@ -337,31 +330,23 @@ try:
                     }
 
                     process_data(old_data, data_card, i)
-            except Exception as e:
-                logger.exception(
-                    f"[{i + 1}] ❌ Ошибка при обработке карточки")
-            finally:
-                logger.info(
-                    f"📄 Страница {page_index + 1}, всего собрано: {len(collect_data)}, ✅ Успешно обработана за {round(time.time() - start_time_page, 2)} сек")
-                logger.debug(
-                    f"Страница: {page_index + 1}, Осталось: {count_pages}")
-                if page_index != count_pages:
-                    next_buttons = page.locator(
-                        'div._1x4k6z7 >> ._n5hmn94 >> svg')
-                    if page_index == 0:
-                        next_buttons.nth(0).click()
-                    else:
-                        next_buttons.nth(1).click()
-                    logger.debug(
-                        f"Нажатие на кнопку перехода на следующую страницу")
+                except Exception as e:
+                    logger.exception(f"[{i + 1}] ❌ Ошибка при обработке карточки")
 
-                else:
-                    logger.info("Дошли до последней страницы, завершаем цикл")
-                    logger.info("✅ Цикл завершен")
-                    break
+            logger.info(f"📄 Страница {page_index + 1}, собрано: {len(collect_data)}, время: {round(time.time() - start_time_page, 2)} сек")
+
+            if page_index != count_pages:
+                next_buttons = page.locator('div._1x4k6z7 >> ._n5hmn94 >> svg')
+                if next_buttons.count() > 0:
+                    try:
+                        next_buttons.nth(1 if page_index > 0 else 0).click()
+                    except Exception as e:
+                        logger.warning(f"Не удалось нажать 'дальше': {e}")
+            else:
+                logger.info("✅ Последняя страница достигнута")
+
 except Exception as e:
-    logger.error(f"Ошибка при запуске браузера: {e}")
+    logger.error(f"❌ Ошибка при запуске браузера: {e}")
 finally:
-    logger.info("Программа прекращена")
-    logger.info(
-        f"Всего собрано: {len(collect_data)}, Выполнена за {round(time.time() - start_time_program, 2)} сек")
+    logger.info("Программа завершена")
+    logger.info(f"Всего собрано: {len(collect_data)}, время работы: {round(time.time() - start_time_program, 2)} сек")
