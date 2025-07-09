@@ -545,7 +545,7 @@ def run_parser_for_region(region, search_word, attempt=1):
         logger.error(
             f"❌ Ошибка при запуске браузера для региона {region}: {e}")
         log_failed_region(reason="BROWSER ERROR", region=region, category=search_word)
-        
+
     write_json_data(old_data, Path("output") / region / f"{search_word}.json")
     logger.info("Программа завершена")
     logger.info(f"Всего собрано: {len(collect_data)}, время: {round(time.time() - start_time_program, 2)} сек")
@@ -558,7 +558,8 @@ def run_parser_for_region(region, search_word, attempt=1):
         logger.warning(f"⚠ Регион '{region}' дал 0 карточек — даже после повтора")
         log_failed_region(reason="REGION ABORT", region=region, category=search_word)
 
-    return {"count": len(collect_data)}
+    logger.info(f"✅ Завершён регион '{region}', собрано {len(collect_data)} карточек")
+    return {"count": len(collect_data)}  # Убедись, что всегда возвращается dict
 
 
 if __name__ == '__main__':
@@ -589,7 +590,7 @@ if __name__ == '__main__':
                 key = f"{region}|{category}"
 
                 try:
-                    result = r.get(timeout=30)
+                    result = r.get(timeout=600)
 
                     if result and isinstance(result, dict) and result.get("count", 0) > 0:
                         logger.info(
@@ -599,7 +600,11 @@ if __name__ == '__main__':
                         logger.warning(
                             f"⚠️ Объект #{i + 1} ({key}) завершён, но данные не получены или пусты")
                 except Exception as e:
-                    logger.error(f"❌ Ошибка в объекте #{i + 1} ({key}): {e}")
+                    logger.error(f"❌ Ошибка в объекте #{i + 1} ({key}): {type(e).__name__}: {e}")
+                    logger.debug(traceback.format_exc())
+                    log_failed_region(reason="PROCESS EXCEPTION", region=region, category=category, exc=e)
+                    completed_regions[key] = False  # чтобы не перезапускать в следующем проходе
+
 
         save_completed(completed_regions)  # сохраняем после каждого прохода
 
