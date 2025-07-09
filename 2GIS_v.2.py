@@ -84,7 +84,8 @@ regions = [
 search_words = [
     "Автосервис",
     # "Красота",
-    # "rghdfghdfghfdghfgh",
+    # "rghdfghdfghfdghfgh",rghdfghdfghfdghfgh
+
 ]
 
 args_list = [(region, word) for word in search_words for region in regions]
@@ -377,6 +378,7 @@ def run_parser_for_region(region, search_word, attempt=1):
     old_data = read_json_data(f"output/{region}/{search_word}.json")
     existing_names = set(x["name"] for x in old_data)
     collect_data = []
+    count_cards = 0  
 
     def process_data(existing_data, new_card_data):
         if new_card_data["name"] not in (x["name"] for x in existing_data):
@@ -542,36 +544,26 @@ def run_parser_for_region(region, search_word, attempt=1):
     except Exception as e:
         logger.error(
             f"❌ Ошибка при запуске браузера для региона {region}: {e}")
-    finally:
-        # Сохраняем только один раз
-        write_json_data(
-            old_data, Path("output") / region / f"{search_word}.json")
-        logger.info("Программа завершена")
-        logger.info(
-            f"Всего собрано: {len(collect_data)}, время работы: {round(time.time() - start_time_program, 2)} сек")
+        log_failed_region(reason="BROWSER ERROR", region=region, category=search_word)
+        
+    write_json_data(old_data, Path("output") / region / f"{search_word}.json")
+    logger.info("Программа завершена")
+    logger.info(f"Всего собрано: {len(collect_data)}, время: {round(time.time() - start_time_program, 2)} сек")
 
-        if not count_cards:
-            if attempt == 1:
-                logger.warning(
-                    f"🔁 Повторный запуск региона '{region}' — первая попытка вернула 0 карточек")
-                return run_parser_for_region(region, search_word, attempt=2)
-            else:
-                logger.warning(
-                    f"⚠ Регион '{region}' дал 0 карточек — даже после повтора")
-                log_failed_region(
-                    reason="REGION ABORT",
-                    region=region,
-                    category=search_word
-                )
+    # Повторный запуск, если данных нет
+    if count_cards == 0 and attempt == 1:
+        logger.warning(f"🔁 Повторный запуск региона '{region}' — первая попытка вернула 0 карточек")
+        return run_parser_for_region(region, search_word, attempt=2)
+    elif count_cards == 0:
+        logger.warning(f"⚠ Регион '{region}' дал 0 карточек — даже после повтора")
+        log_failed_region(reason="REGION ABORT", region=region, category=search_word)
 
-        return {
-            "count": count_cards,  # или сколько записей реально было найдено
-        }
+    return {"count": len(collect_data)}
 
 
 if __name__ == '__main__':
     start_time_all = time.time()
-    num_processes = 3
+    num_processes = 2
     max_passes = 2
     completed_regions = load_completed()
 
