@@ -18,6 +18,8 @@ output_base = 'output_csv'
 os.makedirs(output_base, exist_ok=True)
 
 all_rows = []
+total_items = 0
+total_with_email = 0
 
 fieldnames = [
     'Имя', 'Рейтинг', 'Кол-во отзывов', 'Телефоны', 'Сайт', 'WhatsApp', 'Telegram',
@@ -35,6 +37,9 @@ for root, dirs, files in os.walk(input_base):
                 except json.JSONDecodeError:
                     print(f"⚠️ Проблема с файлом: {json_path}")
                     continue
+
+            total_items += len(data)
+            count_with_email = 0
 
             for item in data:
                 if not item.get('email'):
@@ -59,9 +64,11 @@ for root, dirs, files in os.walk(input_base):
                     'Youtube': check_data(socials, ' YouTube'),
                 }
                 all_rows.append(row)
+                count_with_email += 1
 
+            total_with_email += count_with_email
             print(
-                f'✅ Обработан: {json_path}, записей с email: {len(all_rows)}')
+                f'✅ Обработан: {json_path} | всего: {len(data)}, с email: {count_with_email}')
 
 # Записываем все данные в один CSV
 output_file = os.path.join(output_base, 'all_data.csv')
@@ -70,4 +77,7 @@ with open(output_file, 'w', newline='', encoding='utf-8') as f_csv:
     writer.writeheader()
     writer.writerows(all_rows)
 
-print(f'\n📁 Готово: сохранено {len(all_rows)} строк в {output_file}')
+print('\n📊 Статистика:')
+print(f'🔹 Всего записей во всех файлах: {total_items}')
+print(f'🔹 С email: {total_with_email}')
+print(f'📁 CSV сохранён: {output_file}')
