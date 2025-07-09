@@ -2,7 +2,6 @@ import os
 import json
 import csv
 
-
 def check_data(item, name):
     value = item.get(name)
     if isinstance(value, list) and value:
@@ -12,24 +11,23 @@ def check_data(item, name):
     else:
         return '-'
 
-
 input_base = 'output'
 output_base = 'output_csv'
 os.makedirs(output_base, exist_ok=True)
 
 all_rows = []
 total_items = 0
-total_with_website = 0
+total_valid = 0
 
 fieldnames = [
-    'Имя', 'Рейтинг', 'Кол-во отзывов', 'Телефоны', 'Сайт', 'WhatsApp', 'Telegram',
-    'VK', 'OK', 'Instagram', 'Twitter', 'Facebook', 'Youtube', 'Email', 'Адрес'
+    'Рубрика', 'Имя', 'Сайт', 'Телефоны', 'Email', 'WhatsApp'
 ]
 
 for root, dirs, files in os.walk(input_base):
     for file in files:
         if file.endswith('.json'):
             json_path = os.path.join(root, file)
+            rubric = os.path.splitext(file)[0]  # Название файла без расширения
 
             with open(json_path, 'r', encoding='utf-8') as f_json:
                 try:
@@ -39,39 +37,29 @@ for root, dirs, files in os.walk(input_base):
                     continue
 
             total_items += len(data)
-            count_with_website = 0
+            valid_count = 0
 
             for item in data:
-                if not item.get('website'):
-                    continue  # пропустить, если нет сайта
+                if not item.get('name') or not item.get('website'):
+                    continue  # Пропуск без обязательных полей
 
                 socials = item.get('socials', {})
                 row = {
+                    'Рубрика': rubric,
                     'Имя': item.get('name'),
-                    'Рейтинг': item.get('rating') or '0',
-                    'Кол-во отзывов': item.get('count_reviews') or '0',
-                    'Телефоны': check_data(item, 'phones'),
-                    'Адрес': check_data(item, 'address'),
-                    'Email': check_data(item, 'email'),
                     'Сайт': check_data(item, 'website'),
+                    'Телефоны': check_data(item, 'phones'),
+                    'Email': check_data(item, 'email'),
                     'WhatsApp': check_data(socials, 'WhatsApp'),
-                    'Telegram': check_data(socials, 'Telegram'),
-                    'VK': check_data(socials, 'ВКонтакте'),
-                    'OK': check_data(socials, 'Одноклассники'),
-                    'Instagram': check_data(socials, 'Instagram'),
-                    'Facebook': check_data(socials, 'Facebook'),
-                    'Twitter': check_data(socials, 'Twitter'),
-                    'Youtube': check_data(socials, ' YouTube'),
                 }
                 all_rows.append(row)
-                count_with_website += 1
+                valid_count += 1
 
-            total_with_website += count_with_website
-            print(
-                f'✅ Обработан: {json_path} | всего: {len(data)}, с сайтом: {count_with_website}')
+            total_valid += valid_count
+            print(f'✅ {rubric} | всего: {len(data)}, записей в таблицу: {valid_count}')
 
-# Записываем все данные в один CSV
-output_file = os.path.join(output_base, 'all_data.csv')
+# Запись в CSV
+output_file = os.path.join(output_base, 'filtered_data.csv')
 with open(output_file, 'w', newline='', encoding='utf-8') as f_csv:
     writer = csv.DictWriter(f_csv, fieldnames=fieldnames, delimiter=';')
     writer.writeheader()
@@ -79,5 +67,5 @@ with open(output_file, 'w', newline='', encoding='utf-8') as f_csv:
 
 print('\n📊 Статистика:')
 print(f'🔹 Всего записей во всех файлах: {total_items}')
-print(f'🔹 С сайтом: {total_with_website}')
+print(f'🔹 Добавлено в таблицу: {total_valid}')
 print(f'📁 CSV сохранён: {output_file}')
