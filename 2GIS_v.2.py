@@ -3,6 +3,8 @@ import json
 import time
 import base64
 import logging
+import os
+import traceback
 from pathlib import Path
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from multiprocessing import Pool, cpu_count
@@ -10,6 +12,7 @@ from urllib.parse import unquote, urlparse
 from urllib.parse import quote
 from playwright.sync_api import sync_playwright
 
+COMPLETED_FILE = 'completed_regions.json'
 
 file_handler = logging.FileHandler("2GIS.log", mode="a", encoding="utf-8")
 file_handler.setLevel(logging.INFO)  # Лог в файл только важное
@@ -48,7 +51,7 @@ regions = [
     # "Курская область",
     # "Ленинградская область",
     # "Липецкая область",
-    "Магаданская область",
+    # "Магаданская область",
     # "Московская область",
     # "Мурманская область",
     # "Нижегородская область",
@@ -66,24 +69,67 @@ regions = [
     # "Саратовская область",
     # "Сахалинская область",
     # "Свердловская область",
-    # "Смоленская область",
-    # "Тамбовская область",
-    # "Тверская область",
-    # "Томская область",
-    # "Тульская область",
-    # "Тюменская область",
-    # "Ульяновская область",
-    # "Челябинская область",
-    # "Ярославская область"
+    "Смоленская область",
+    "Тамбовская область",
+    "Тверская область",
+    "Томская область",
+    "Тульская область",
+    "Тюменская область",
+    "Ульяновская область",
+    "Челябинская область",
+    "Ярославская область",
+    # "fgdfgdfgggdf"
 ]
 
 search_words = [
     "Автосервис",
     # "Красота",
+    # "rghdfghdfghfdghfgh",
 ]
 
 args_list = [(region, word) for word in search_words for region in regions]
 country = "ru"
+
+
+def log_failed_region(reason: str, region: str, category: str, extra: str = "", exc: Exception = None):
+    """
+    Логирует ошибку в failed_regions.txt с подробной информацией.
+
+    :param reason: Причина (например, 'REGION ABORT', 'PAGE ABORT')
+    :param region: Название региона
+    :param category: Поисковый ключ (категория)
+    :param extra: Дополнительные данные (например, страница, время)
+    :param exc: Исключение, если есть (Exception)
+    """
+    path = Path("failed_regions.txt")
+    error_info = ""
+
+    if exc:
+        error_info = f"{type(exc).__name__}: {str(exc)}"
+
+    line = f"[{reason}] {region}|{category}"
+    if extra:
+        line += f"|{extra}"
+    if error_info:
+        line += f" | {error_info}"
+
+    try:
+        with path.open("a", encoding="utf-8") as f:
+            f.write(line.strip() + "\n")
+    except Exception as e:
+        print(f"❌ Ошибка при записи в failed_regions.txt: {e}")
+
+
+def load_completed():
+    if os.path.exists(COMPLETED_FILE):
+        with open(COMPLETED_FILE, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return {}
+
+
+def save_completed(completed_dict):
+    with open(COMPLETED_FILE, 'w', encoding='utf-8') as f:
+        json.dump(completed_dict, f, ensure_ascii=False, indent=2)
 
 
 def clean_invisible(text):
@@ -371,23 +417,36 @@ def run_parser_for_region(region, search_word, attempt=1):
                 logger.info(
                     f"Переход по странице {page_index + 1} из {count_pages + 1}")
 
-                card_blocks = page.locator("._awwm2v > div")
-                total = card_blocks.count()
+                cards = page.locator("._1kf6gff")
+                count = cards.count()
 
-                for i in range(total):
+                for i in range(count):
                     try:
                         start_time_card = time.time()
-                        card = card_blocks.nth(i)
-                        card.scroll_into_view_if_needed()
-                        page.wait_for_timeout(150)
+                        card = cards.nth(i)
+
+                        # Скролл к элементу
+                        try:
+                            card.scroll_into_view_if_needed(timeout=1500)
+                        except:
+                            logger.warning(
+                                f"[{i+1}] ⚠ Не удалось проскроллить к карточке")
+                            continue
 
                         if not card.is_visible():
                             logger.debug(
                                 f"[{i+1}] ❌ Элемент не виден — пропуск")
                             continue
 
-                        card.click(timeout=1500)
+                        # Клик
+                        try:
+                            card.click(timeout=1500)
+                        except Exception as e:
+                            logger.warning(
+                                f"[{i+1}] ⚠ Не удалось кликнуть по карточке — элемент перекрыт: {e}")
+                            continue  # перейти к следующей карточке
 
+                        # Ждём загрузки карточки
                         try:
                             page.wait_for_selector("._fjltwx h1", timeout=2000)
                         except:
@@ -468,7 +527,15 @@ def run_parser_for_region(region, search_word, attempt=1):
                         logger.warning(
                             f"❌ Не удалось перейти на следующую страницу в {region}: {e}")
                         logger.info(
-                            f"🚫 Останавливаем парсинг {region} на текущей странице")
+                            f"🚫 Останавливаем парсинг {region} на текущей странице и записываем")
+
+                        log_failed_region(
+                            reason="PAGE ABORT",
+                            region=region,
+                            category=search_word,
+                            extra=f"{page_index + 1}|{len(collect_data)}|{round(time.time() - start_time_page, 2)}",
+                            exc=e
+                        )
                         break
                 else:
                     logger.info(f"✅ Последняя страница {region} достигнута")
@@ -491,35 +558,58 @@ def run_parser_for_region(region, search_word, attempt=1):
             else:
                 logger.warning(
                     f"⚠ Регион '{region}' дал 0 карточек — даже после повтора")
-                with open("failed_regions.txt", "a", encoding="utf-8") as f:
-                    f.write(f"{region}|{search_word}\n")
+                log_failed_region(
+                    reason="REGION ABORT",
+                    region=region,
+                    category=search_word
+                )
+
+        return {
+            "count": count_cards,  # или сколько записей реально было найдено
+        }
 
 
 if __name__ == '__main__':
+    start_time_all = time.time()
     num_processes = 3
-    # сколько раз обходить все регионы (1 — минимум, 2 — твой случай)
     max_passes = 2
-
-    start_time_all = time.time()  # общее время работы
+    completed_regions = load_completed()
 
     for current_pass in range(1, max_passes + 1):
-        start_time_pass = time.time()  # время одного прохода
-
+        start_time_pass = time.time()
         logger.info(
             f"🚀 Запуск обхода #{current_pass} со {num_processes} процессами")
 
+        filtered_args_list = [
+            args for args in args_list if f"{args[0]}|{args[1]}" not in completed_regions
+        ]
+
         with Pool(processes=num_processes) as pool:
             results = []
-            for args in args_list:
+
+            for args in filtered_args_list:
                 r = pool.apply_async(run_parser_for_region, args=args)
                 results.append(r)
 
-            for i, r in enumerate(results):
+            for i, (r, args) in enumerate(zip(results, filtered_args_list)):
+                region = args[0]
+                category = args[1]
+                key = f"{region}|{category}"
+
                 try:
-                    r.wait()  # Ждём завершения
-                    logger.info(f"✅ Объект #{i + 1} завершён")
+                    result = r.get(timeout=30)
+
+                    if result and isinstance(result, dict) and result.get("count", 0) > 0:
+                        logger.info(
+                            f"✅ Объект #{i + 1} завершён ({key}) — собрано: {result['count']}")
+                        completed_regions[key] = True
+                    else:
+                        logger.warning(
+                            f"⚠️ Объект #{i + 1} ({key}) завершён, но данные не получены или пусты")
                 except Exception as e:
-                    logger.error(f"❌ Ошибка в объекте #{i + 1}: {e}")
+                    logger.error(f"❌ Ошибка в объекте #{i + 1} ({key}): {e}")
+
+        save_completed(completed_regions)  # сохраняем после каждого прохода
 
         pass_time = round(time.time() - start_time_pass, 2)
         logger.info(f"🎉 Обход #{current_pass} завершён за {pass_time} сек")
