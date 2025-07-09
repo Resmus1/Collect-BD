@@ -19,7 +19,7 @@ os.makedirs(output_base, exist_ok=True)
 
 all_rows = []
 total_items = 0
-total_with_email = 0
+total_with_website = 0
 
 fieldnames = [
     'Имя', 'Рейтинг', 'Кол-во отзывов', 'Телефоны', 'Сайт', 'WhatsApp', 'Telegram',
@@ -39,11 +39,11 @@ for root, dirs, files in os.walk(input_base):
                     continue
 
             total_items += len(data)
-            count_with_email = 0
+            count_with_website = 0
 
             for item in data:
-                if not item.get('email'):
-                    continue  # пропустить, если нет email
+                if not item.get('website'):
+                    continue  # пропустить, если нет сайта
 
                 socials = item.get('socials', {})
                 row = {
@@ -64,11 +64,11 @@ for root, dirs, files in os.walk(input_base):
                     'Youtube': check_data(socials, ' YouTube'),
                 }
                 all_rows.append(row)
-                count_with_email += 1
+                count_with_website += 1
 
-            total_with_email += count_with_email
+            total_with_website += count_with_website
             print(
-                f'✅ Обработан: {json_path} | всего: {len(data)}, с email: {count_with_email}')
+                f'✅ Обработан: {json_path} | всего: {len(data)}, с сайтом: {count_with_website}')
 
 # Записываем все данные в один CSV
 output_file = os.path.join(output_base, 'all_data.csv')
@@ -79,5 +79,5 @@ with open(output_file, 'w', newline='', encoding='utf-8') as f_csv:
 
 print('\n📊 Статистика:')
 print(f'🔹 Всего записей во всех файлах: {total_items}')
-print(f'🔹 С email: {total_with_email}')
+print(f'🔹 С сайтом: {total_with_website}')
 print(f'📁 CSV сохранён: {output_file}')
