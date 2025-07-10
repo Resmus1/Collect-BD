@@ -61,9 +61,10 @@ for region in os.listdir(input_base):
                 if not name:
                     continue
 
+                if not item.get('website') or not str(item.get('website')).strip():
+                    continue  # ⛔️ Пропуск карточек без сайта
+
                 name = name.strip()
-                if not item.get('website') and not item.get('phones'):
-                    continue
 
                 key = f"{region}__{name}"
 
