@@ -107,7 +107,7 @@ for entry in firm_dict.values():
     all_rows.append(row)
 
 # Запись в CSV
-output_file = os.path.join(output_base, 'aggregated_by_region.csv')
+output_file = os.path.join(output_base, 'aggregated_with_email.csv')
 with open(output_file, 'w', newline='', encoding='utf-8') as f_csv:
     writer = csv.DictWriter(f_csv, fieldnames=fieldnames, delimiter=';')
     writer.writeheader()
