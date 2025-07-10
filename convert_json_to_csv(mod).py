@@ -1,10 +1,8 @@
 import os
 import json
 import csv
-from collections import defaultdict
 
 def to_set(value):
-    """Преобразует строку или список в множество строк"""
     if isinstance(value, list):
         return set(str(v).strip() for v in value if v)
     elif isinstance(value, str) and value.strip():
@@ -12,8 +10,7 @@ def to_set(value):
     return set()
 
 def check_data(item, name):
-    value = item.get(name)
-    return to_set(value)
+    return to_set(item.get(name))
 
 def check_social(item, name):
     return to_set(item.get('socials', {}).get(name))
@@ -23,12 +20,11 @@ output_base = 'output_csv'
 os.makedirs(output_base, exist_ok=True)
 
 fieldnames = [
-    'Имя', 'Регионы', 'Категории', 'Подкатегории',
+    'Имя', 'Регион', 'Категории', 'Подкатегории',
     'Сайты', 'Телефоны', 'Email', 'WhatsApp'
 ]
 
 firm_dict = {}
-
 total_files = 0
 total_items = 0
 
@@ -66,14 +62,15 @@ for region in os.listdir(input_base):
                     continue
 
                 name = name.strip()
-                
                 if not item.get('website') and not item.get('phones'):
-                    continue  # Пропуск карточек без основных контактов
+                    continue
 
-                if name not in firm_dict:
-                    firm_dict[name] = {
+                key = f"{region}__{name}"
+
+                if key not in firm_dict:
+                    firm_dict[key] = {
                         'Имя': name,
-                        'Регионы': set(),
+                        'Регион': region,
                         'Категории': set(),
                         'Подкатегории': set(),
                         'Сайты': set(),
@@ -82,8 +79,7 @@ for region in os.listdir(input_base):
                         'WhatsApp': set()
                     }
 
-                entry = firm_dict[name]
-                entry['Регионы'].add(region)
+                entry = firm_dict[key]
                 entry['Категории'].add(category)
                 entry['Подкатегории'].add(subcategory)
                 entry['Сайты'].update(check_data(item, 'website'))
@@ -99,7 +95,7 @@ all_rows = []
 for entry in firm_dict.values():
     row = {
         'Имя': entry['Имя'],
-        'Регионы': ', '.join(sorted(entry['Регионы'])),
+        'Регион': entry['Регион'],
         'Категории': ', '.join(sorted(entry['Категории'])),
         'Подкатегории': ', '.join(sorted(entry['Подкатегории'])),
         'Сайты': ', '.join(sorted(entry['Сайты'])),
@@ -110,7 +106,7 @@ for entry in firm_dict.values():
     all_rows.append(row)
 
 # Запись в CSV
-output_file = os.path.join(output_base, 'aggregated_data.csv')
+output_file = os.path.join(output_base, 'aggregated_by_region.csv')
 with open(output_file, 'w', newline='', encoding='utf-8') as f_csv:
     writer = csv.DictWriter(f_csv, fieldnames=fieldnames, delimiter=';')
     writer.writeheader()
@@ -120,5 +116,5 @@ with open(output_file, 'w', newline='', encoding='utf-8') as f_csv:
 print('\n📊 Статистика:')
 print(f'🔹 Файлов обработано: {total_files}')
 print(f'🔹 Всего записей во всех файлах: {total_items}')
-print(f'🔹 Уникальных организаций по имени: {len(all_rows)}')
+print(f'🔹 Уникальных организаций по имени и региону: {len(all_rows)}')
 print(f'📁 CSV сохранён: {output_file}')
