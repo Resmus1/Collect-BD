@@ -15,8 +15,7 @@ from playwright.sync_api import sync_playwright
 COMPLETED_FILE = 'completed_regions.json'
 
 file_handler = logging.FileHandler("2GIS.log", mode="a", encoding="utf-8")
-file_handler.setLevel(logging.INFO)  # Лог в файл только важнcое
-file_handler.setLevel(logging.INFO)  # Лог в файл только важнcое
+file_handler.setLevel(logging.INFO)  # Лог в файл только важное
 
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.DEBUG)  # В консоль всё (если нужно)
