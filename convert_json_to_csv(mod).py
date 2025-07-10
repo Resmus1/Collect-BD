@@ -28,6 +28,8 @@ firm_dict = {}
 total_files = 0
 total_items = 0
 
+region_stats = {}  # {region: {'total': int, 'unique': set()}}
+
 for region in os.listdir(input_base):
     region_path = os.path.join(input_base, region)
     if not os.path.isdir(region_path):
@@ -87,6 +89,14 @@ for region in os.listdir(input_base):
                 entry['Телефоны'].update(check_data(item, 'phones'))
                 entry['Email'].update(check_data(item, 'email'))
                 entry['WhatsApp'].update(check_social(item, 'WhatsApp'))
+
+                # Инициализация счётчиков для региона
+                if region not in region_stats:
+                    region_stats[region] = {'total': 0, 'unique_keys': set()}
+
+                region_stats[region]['total'] += 1
+                region_stats[region]['unique_keys'].add(key)
+
                 valid_count += 1
 
             print(f'✅ {region}/{category}/{subcategory} | записей в таблицу: {valid_count}')
@@ -114,7 +124,17 @@ with open(output_file, 'w', newline='', encoding='utf-8') as f_csv:
     writer.writerows(all_rows)
 
 # Статистика
-print('\n📊 Статистика:')
+print('\n📍 Статистика по регионам:')
+for region, stats in region_stats.items():
+    total = stats['total']
+    unique = len(stats['unique_keys'])
+    duplicates = total - unique
+    print(f'🔸 {region}:')
+    print(f'   ├─ Всего карточек: {total}')
+    print(f'   ├─ Уникальных организаций: {unique}')
+    print(f'   └─ Дубликатов по имени: {duplicates}')
+
+print('\n📊 Общая статистика:')
 print(f'🔹 Файлов обработано: {total_files}')
 print(f'🔹 Всего записей во всех файлах: {total_items}')
 print(f'🔹 Уникальных организаций по имени и региону: {len(all_rows)}')
