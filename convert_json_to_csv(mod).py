@@ -1,71 +1,124 @@
 import os
 import json
 import csv
+from collections import defaultdict
+
+def to_set(value):
+    """Преобразует строку или список в множество строк"""
+    if isinstance(value, list):
+        return set(str(v).strip() for v in value if v)
+    elif isinstance(value, str) and value.strip():
+        return {value.strip()}
+    return set()
 
 def check_data(item, name):
     value = item.get(name)
-    if isinstance(value, list) and value:
-        return ', '.join(map(str, value))
-    elif isinstance(value, str) and value.strip():
-        return value
-    else:
-        return '-'
+    return to_set(value)
+
+def check_social(item, name):
+    return to_set(item.get('socials', {}).get(name))
 
 input_base = 'output'
 output_base = 'output_csv'
 os.makedirs(output_base, exist_ok=True)
 
-all_rows = []
-total_items = 0
-total_valid = 0
-
 fieldnames = [
-    'Рубрика', 'Имя', 'Сайт', 'Телефоны', 'Email', 'WhatsApp'
+    'Имя', 'Регионы', 'Категории', 'Подкатегории',
+    'Сайты', 'Телефоны', 'Email', 'WhatsApp'
 ]
 
-for root, dirs, files in os.walk(input_base):
-    for file in files:
-        if file.endswith('.json'):
-            json_path = os.path.join(root, file)
-            rubric = os.path.splitext(file)[0]  # Название файла без расширения
+firm_dict = {}
 
-            with open(json_path, 'r', encoding='utf-8') as f_json:
-                try:
+total_files = 0
+total_items = 0
+
+for region in os.listdir(input_base):
+    region_path = os.path.join(input_base, region)
+    if not os.path.isdir(region_path):
+        continue
+
+    for category in os.listdir(region_path):
+        category_path = os.path.join(region_path, category)
+        if not os.path.isdir(category_path):
+            continue
+
+        for sub_file in os.listdir(category_path):
+            if not sub_file.endswith('.json'):
+                continue
+
+            total_files += 1
+            subcategory = os.path.splitext(sub_file)[0]
+            json_path = os.path.join(category_path, sub_file)
+
+            try:
+                with open(json_path, 'r', encoding='utf-8') as f_json:
                     data = json.load(f_json)
-                except json.JSONDecodeError:
-                    print(f"⚠️ Проблема с файлом: {json_path}")
-                    continue
+            except json.JSONDecodeError:
+                print(f"⚠️ Проблема с файлом: {json_path}")
+                continue
 
             total_items += len(data)
             valid_count = 0
 
             for item in data:
-                if not item.get('name') or not item.get('website'):
-                    continue  # Пропуск без обязательных полей
+                name = item.get('name')
+                if not name:
+                    continue
 
-                socials = item.get('socials', {})
-                row = {
-                    'Рубрика': rubric,
-                    'Имя': item.get('name'),
-                    'Сайт': check_data(item, 'website'),
-                    'Телефоны': check_data(item, 'phones'),
-                    'Email': check_data(item, 'email'),
-                    'WhatsApp': check_data(socials, 'WhatsApp'),
-                }
-                all_rows.append(row)
+                name = name.strip()
+                
+                if not item.get('website') and not item.get('phones'):
+                    continue  # Пропуск карточек без основных контактов
+
+                if name not in firm_dict:
+                    firm_dict[name] = {
+                        'Имя': name,
+                        'Регионы': set(),
+                        'Категории': set(),
+                        'Подкатегории': set(),
+                        'Сайты': set(),
+                        'Телефоны': set(),
+                        'Email': set(),
+                        'WhatsApp': set()
+                    }
+
+                entry = firm_dict[name]
+                entry['Регионы'].add(region)
+                entry['Категории'].add(category)
+                entry['Подкатегории'].add(subcategory)
+                entry['Сайты'].update(check_data(item, 'website'))
+                entry['Телефоны'].update(check_data(item, 'phones'))
+                entry['Email'].update(check_data(item, 'email'))
+                entry['WhatsApp'].update(check_social(item, 'WhatsApp'))
                 valid_count += 1
 
-            total_valid += valid_count
-            print(f'✅ {rubric} | всего: {len(data)}, записей в таблицу: {valid_count}')
+            print(f'✅ {region}/{category}/{subcategory} | записей в таблицу: {valid_count}')
+
+# Подготовка к записи
+all_rows = []
+for entry in firm_dict.values():
+    row = {
+        'Имя': entry['Имя'],
+        'Регионы': ', '.join(sorted(entry['Регионы'])),
+        'Категории': ', '.join(sorted(entry['Категории'])),
+        'Подкатегории': ', '.join(sorted(entry['Подкатегории'])),
+        'Сайты': ', '.join(sorted(entry['Сайты'])),
+        'Телефоны': ', '.join(sorted(entry['Телефоны'])),
+        'Email': ', '.join(sorted(entry['Email'])),
+        'WhatsApp': ', '.join(sorted(entry['WhatsApp'])),
+    }
+    all_rows.append(row)
 
 # Запись в CSV
-output_file = os.path.join(output_base, 'filtered_data.csv')
+output_file = os.path.join(output_base, 'aggregated_data.csv')
 with open(output_file, 'w', newline='', encoding='utf-8') as f_csv:
     writer = csv.DictWriter(f_csv, fieldnames=fieldnames, delimiter=';')
     writer.writeheader()
     writer.writerows(all_rows)
 
+# Статистика
 print('\n📊 Статистика:')
+print(f'🔹 Файлов обработано: {total_files}')
 print(f'🔹 Всего записей во всех файлах: {total_items}')
-print(f'🔹 Добавлено в таблицу: {total_valid}')
+print(f'🔹 Уникальных организаций по имени: {len(all_rows)}')
 print(f'📁 CSV сохранён: {output_file}')
